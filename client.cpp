@@ -1,12 +1,11 @@
 /*
-    GENERAL RULES
-    -] All the int functions will return 3 possible values:
-            If return 1, then it's all OK, so the caller continues its execution.
-            If return 0, then it's a Tollerable-Error, so the caller continues its execution.
-            If return -1, then it's a Critical-Error, so the caller stops its execution.
+    -> All the int functions will return 3 possible values:
+            1 -> all OK
+            0 -> tolerable error: the caller can continue
+            -1 -> critical error: the caller stops
 */
 
-// ---------- INCLUDE ----------
+// ---------- INCLUDES ----------
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -34,18 +33,17 @@
 #define ONEGB 1073741824
 #define CHUNK_DIM 1048576UL // 1MB
 
+
 using namespace std;
 
-void deleteTempFile(string IDClient)
-{
-   remove( ("CLIENT_FILES/" + IDClient + "/tempPubk.pem").c_str() );
-   remove( ("CLIENT_FILES/" + IDClient + "/certServer.pem").c_str() );
+
+void deleteTempFile(string IDClient){
+   remove(("CLIENT_FILES/" + IDClient + "/tempPubk.pem").c_str());
+   remove(("CLIENT_FILES/" + IDClient + "/certServer.pem").c_str());
 }
 
-void destroy(unsigned char * &pointer, unsigned int len)
-{
-    if(pointer != NULL)
-    {
+void destroy(unsigned char * &pointer, unsigned int len){
+    if(pointer != NULL){
         #pragma optimize("", off)
         memset(pointer, 0, len);
         #pragma optimize("", on)
@@ -53,96 +51,108 @@ void destroy(unsigned char * &pointer, unsigned int len)
     }
 }
 
-bool checkPort(const string& str1)
-{
-    if(str1.empty()){ cerr << "Error: port not allowed" << endl; return false; }
+bool checkPort(const string& str1){
+    if(str1.empty()){ 
+        cerr << "Error: port not allowed" << endl; 
+        return false; 
+    }
 
     static char ok_chars[] = "1234567890";
 
-    if(str1.find_first_not_of(ok_chars) != string::npos) { cerr << "Error: port not allowed" << endl; return false; }
+    if(str1.find_first_not_of(ok_chars) != string::npos){ 
+        cerr << "Error: port not allowed" << endl; 
+        return false; 
+    }
     
     return true;
 }
 
-bool sanification(const string& str1)
-{
-    if(str1.empty()){ cerr << "Error: invalid client ID" << endl; return false; }
+bool sanification(const string& str1){
+    if(str1.empty()){ 
+        cerr << "Error: invalid client ID." << endl; 
+        return false; 
+    }
 
     static char ok_chars[] = "abcdefghijklmnopqrstuvwxyz"
                              "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                              "1234567890";
 
-    if(str1.find_first_not_of(ok_chars) != string::npos) { cerr << "Error: invalid client ID" << endl; return false; }
+    if(str1.find_first_not_of(ok_chars) != string::npos){
+        cerr << "Error: invalid client ID" << endl; 
+        return false; 
+    }
     
     return true;
 }
 
-bool miaMalloc(unsigned char *&buffer, unsigned int len)
-{
+bool customMalloc(unsigned char *&buffer, unsigned int len){
     buffer = (unsigned char *) malloc(len);
-    if(!buffer){ cerr << "Error: miaMalloc() returned NULL" << endl; return false; }
+    if(!buffer){ 
+        cerr << "Error: customMalloc() returned NULL" << endl; 
+        return false; 
+    }
+    
     return true;
 }
 
-bool allocateANDgenerateIV(unsigned char *& iv, const EVP_CIPHER* cipher)
-{
-    if(!miaMalloc(iv, DIMIV))
+bool allocateAndGenerateIV(unsigned char *& iv, const EVP_CIPHER* cipher){
+    if(!customMalloc(iv, DIMIV))
         return false;
+
     RAND_poll();
-   // Generate 16 bytes at random. That is my IV
+
+   // Generate 16 bytes at random. This is the IV
     int ret = RAND_bytes((unsigned char*)&iv[0],DIMIV);
-    if(ret!=1){
-	      cerr <<"Error: RAND_bytes Failed\n";
+    if(ret != 1){
+	      cerr <<"Error: RAND_bytes() failed" << endl;
           return false;
     }
+
     return true;
 }
 
 int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *aad, unsigned long aad_len, unsigned char *tag,
-                unsigned char *key, unsigned char *iv, int iv_len, unsigned char *plaintext)
-{
+                unsigned char *key, unsigned char *iv, int iv_len, unsigned char *plaintext){
     EVP_CIPHER_CTX *ctx;
     int len;
     int plaintext_len;
     int ret;
-    /* Create and initialise the context */
+
+    //creation and initialization of the context
     if(!(ctx = EVP_CIPHER_CTX_new()))
         return -1;
-    if(!EVP_DecryptInit(ctx, EVP_aes_128_gcm(), key, iv))
-    {
-        EVP_CIPHER_CTX_cleanup(ctx);
-        return -1;
-    }
-	//Provide any AAD data.
-    if(!EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len))
-    {
+    if(!EVP_DecryptInit(ctx, EVP_aes_128_gcm(), key, iv)){
         EVP_CIPHER_CTX_cleanup(ctx);
         return -1;
     }
 
-    if(!EVP_DecryptUpdate(ctx, NULL, &len, iv, iv_len))
-    {
+	//Provide any AAD data.
+    if(!EVP_DecryptUpdate(ctx, NULL, &len, aad, aad_len)){
+        EVP_CIPHER_CTX_cleanup(ctx);
+        return -1;
+    }
+
+    if(!EVP_DecryptUpdate(ctx, NULL, &len, iv, iv_len)){
         EVP_CIPHER_CTX_cleanup(ctx);
         return -1;
     }
 
 	//Provide the message to be decrypted, and obtain the plaintext output.
-    if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
-    {
+    if(!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len)){
         EVP_CIPHER_CTX_cleanup(ctx);
         return -1;
     }
         
     plaintext_len = len;
+
     /* Set expected tag value. Works in OpenSSL 1.0.1d and later */
-    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, DIMTAG, tag))
-    {
+    if(!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_SET_TAG, DIMTAG, tag)){
         EVP_CIPHER_CTX_cleanup(ctx);
         return -1;
     }
         
     /*
-     * Finalise the decryption. A positive return value indicates success,
+     * Finalize the decryption. A positive return value indicates success,
      * anything else is a failure - the plaintext is not trustworthy.
      */
     ret = EVP_DecryptFinal(ctx, plaintext + len, &len);
@@ -160,227 +170,271 @@ int gcm_decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *aa
 }
 
 int gcm_encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *aad, unsigned long aad_len, unsigned char *key,
-                unsigned char *iv, int iv_len, unsigned char *ciphertext, unsigned char *tag)
-{
+                unsigned char *iv, int iv_len, unsigned char *ciphertext, unsigned char *tag){
     EVP_CIPHER_CTX *ctx;
     int len = 0;
     int ciphertext_len = 0;
+
     //Creating and initialising the context
-    if(!(ctx = EVP_CIPHER_CTX_new()))
-    {
-        cerr << "Error: EVP_CIPHER_CTX_new failed" << endl;
+    if(!(ctx = EVP_CIPHER_CTX_new())){
+        cerr << "Error: EVP_CIPHER_CTX_new() failed" << endl;
         return -1;
     }
 
     //Initialising the encryption operation
-    if(1 != EVP_EncryptInit(ctx, EVP_aes_128_gcm(), key, iv))
-    {
-        cerr << "Error: EVP_EncryptInit failed" << endl;
+    if(1 != EVP_EncryptInit(ctx, EVP_aes_128_gcm(), key, iv)){
+        cerr << "Error: EVP_EncryptInit() failed" << endl;
         EVP_CIPHER_CTX_free(ctx);
         return -1;
     }
 
     //Providing the AAD data
-    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len))
-    {
-        cerr << "Error: EVP_EncryptUpdate failed" << endl;
+    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, aad, aad_len)){
+        cerr << "Error: EVP_EncryptUpdate() failed" << endl;
         EVP_CIPHER_CTX_free(ctx);
         return -1;
     }
 
-    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, iv, iv_len))
-    {
-        cerr << "Error: EVP_EncryptUpdate failed" << endl; 
+    if(1 != EVP_EncryptUpdate(ctx, NULL, &len, iv, iv_len)){
+        cerr << "Error: EVP_EncryptUpdate() failed" << endl; 
         EVP_CIPHER_CTX_free(ctx);
         return -1;
     }
 
-    if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len))
-    {
-        cerr << "Error: EVP_EncryptUpdate failed" << endl;
+    if(1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len)){
+        cerr << "Error: EVP_EncryptUpdate() failed" << endl;
         EVP_CIPHER_CTX_free(ctx);
         return -1;
     }
 
     ciphertext_len = len;
     
-    if(1 != EVP_EncryptFinal(ctx, ciphertext + len, &len))
-    {
-        cerr << "Error: EVP_EncryptFinal failed" << endl;
+    if(1 != EVP_EncryptFinal(ctx, ciphertext + len, &len)){
+        cerr << "Error: EVP_EncryptFinal() failed" << endl;
         EVP_CIPHER_CTX_free(ctx);
         return -1;
     }
+
     ciphertext_len += len;
 
     //Getting the TAG
-    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, DIMTAG, tag))
-    {
-        cerr << "Error: EVP_CIPHER_CTX_ctrl failed" << endl;
+    if(1 != EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_AEAD_GET_TAG, DIMTAG, tag)){
+        cerr << "Error: EVP_CIPHER_CTX_ctrl() failed" << endl;
         EVP_CIPHER_CTX_free(ctx);
         return -1;
     }
 
     EVP_CIPHER_CTX_free(ctx);
+
     return ciphertext_len;
 }
 
-bool write_file(unsigned char *path, unsigned char *buffer, unsigned long len)
-{
+bool write_file(unsigned char *path, unsigned char *buffer, unsigned long len){
     FILE *f = fopen((const char *)path, "w+");
-    if(!f) { cerr << "Error opening the file '" << path << "'" << endl; return false; }
-    if(fwrite(buffer, 1, len, f) != len){ cerr<<"Error while writing into file '" << path << "' (write_file function)" << endl; return false; }
+    
+    if(!f) {
+        cerr << "Error opening '" << path << "'" << endl; 
+        return false; 
+    }
+    
+    if(fwrite(buffer, 1, len, f) != len){
+        cerr<<"Error while writing '" << path << "' (write_file() error)" << endl; ù
+        return false; 
+    }
+
     fclose(f);
     return true;
 }
 
 /*
-    FORMAT OF M2: Ns, cert_dim, Cert_server, TempKpubS, (TempkpubS, Ns)signed_w_privkS
+    M2 FORMAT: Ns, cert_dim, Cert_server, TempKpubS, (TempkpubS, Ns)signed_w_privkS
     The check_M2() function checks the correctness of message M2:
-        -] validates the certificate received from the server by the CA Certificate.
-        -] validates the signed Nonce by the server
+        -> validates the certificate received from the server by the CA Certificate.
+        -> validates the signed Nonce by the server
 */
-bool check_M2(unsigned char *M2, unsigned int Nc, unsigned int &Ns, string IDClient, unsigned char *certServer, long cert_dim, unsigned char* signature, unsigned char* tempPubk)
-{
+bool check_M2(unsigned char *M2, unsigned int Nc, unsigned int &Ns, string IDClient, unsigned char *certServer, long cert_dim, unsigned char* signature, unsigned char* tempPubk){
     bool check = true;
     
-    if(! write_file( (unsigned char *)("CLIENT_FILES/" + IDClient + "/certServer.pem").c_str(), certServer, cert_dim ))
+    if(!write_file((unsigned char *)("CLIENT_FILES/" + IDClient + "/certServer.pem").c_str(), certServer, cert_dim ))
         return false;
 
     string CA_cert_filename = "CLIENT_FILES/" + IDClient + "/FoundationsOfCybersecurity_cert.pem";
     FILE *CA_cert_file = fopen(CA_cert_filename.c_str(), "r");
-    if(!CA_cert_file){ cerr << "Error: can't open file" << endl; return false; }
+    if(!CA_cert_file){
+        cerr << "Error: unable to open file" << endl; 
+        return false; 
+    }
     
     X509 *CA_cert = PEM_read_X509(CA_cert_file, NULL, NULL, NULL);
     fclose(CA_cert_file);
-    if(!CA_cert) { cerr << "Error: PEM_read_X509 returned NULL" << endl; return false; }
+    if(!CA_cert){
+        cerr << "Error: PEM_read_X509() returned NULL" << endl; 
+        return false; 
+    }
+
     //LOADING THE CRL
     string CRL_filename = "CLIENT_FILES/" + IDClient + "/FoundationsOfCybersecurity_crl.pem";
     FILE *CRL_file = fopen(CRL_filename.c_str(), "r");
-    if(!CA_cert_file) 
-    {
+    if(!CA_cert_file) {
         cerr << "Error: can't open file" << endl;
         return false;
     }
+
     X509_CRL *CRL = PEM_read_X509_CRL(CRL_file, NULL, NULL, NULL);
     fclose(CRL_file);
-    if(!CRL) 
-    {
-        cerr << "Error: PEM_read_X509 returned NULL" << endl;
+    if(!CRL) {
+        cerr << "Error: PEM_read_X509() returned NULL" << endl;
         return false;
     }
     
     //BUILDING A STORE WITH THE CA'S CERTIFICATE AND CRL
     X509_STORE *store = X509_STORE_new();
-    if(!store) 
-    {
-        cerr << "Error: X509_STORE_new returned NULL" << endl;
+    if(!store) {
+        cerr << "Error: X509_STORE_new() returned NULL" << endl;
         return false; 
     }
+
     check = X509_STORE_add_cert(store, CA_cert);
-    if(!check) { cerr << "Error in X509_STORE_add_cert" << endl; return false; }
+    if(!check) { 
+        cerr << "Error: X509_STORE_add_cert() returned NULL" << endl; 
+        return false; 
+    }
     check = X509_STORE_add_crl(store, CRL);
-    if(!check) { cerr << "Error in X509_STORE_add_crl" << endl; return false; }
+    if(!check) { 
+        cerr << "Error: X509_STORE_add_crl() returned NULL" << endl; 
+        return false; 
+    }
     check = X509_STORE_set_flags(store, X509_V_FLAG_CRL_CHECK);
-    if(!check) { cerr << "Error in X509_STORE_set_flags" << endl;  return false; }
+    if(!check) { 
+        cerr << "Error: X509_STORE_set_flags() returned NULL" << endl;  
+        return false; 
+    }
     
     //LOADING THE CLIENT'S CERTIFICATE
     string certServer_file("CLIENT_FILES/" + IDClient + "/certServer.pem");
     FILE *cert_file = fopen(certServer_file.c_str(), "r");
-    if(!cert_file) { cerr << "Error: can't open file" << endl; return false; }
+    if(!cert_file) { 
+        cerr << "Error: can't open '" << certServer_file << "'" << endl; 
+        return false; 
+    }
     
     X509 *serverCert = PEM_read_X509(cert_file, NULL, NULL, NULL);
     fclose(cert_file);
-    if(!serverCert) { cerr << "Error: PEM_read_X509 returned NULL" << endl; return false; }
+    if(!serverCert) { 
+        cerr << "Error: PEM_read_X509() returned NULL" << endl; 
+        return false; 
+    }
     
     //VERIFYING THE CERTIFICATE
     X509_STORE_CTX *cert_verify_ctx = X509_STORE_CTX_new();
-    if(!cert_verify_ctx){ cerr << "Error: X_509_STORE_CTX returned NULL" << endl; return false; }
+    if(!cert_verify_ctx){ 
+        cerr << "Error: X_509_STORE_CTX() returned NULL" << endl; 
+        return false; 
+    }
     
     check = X509_STORE_CTX_init(cert_verify_ctx, store, serverCert, NULL);
-    if(!check) { cout << "Error in X509_STORE_CTX_init" << endl; return false; }
+    if(!check) { 
+        cout << "Error: X509_STORE_CTX_init() returned NULL" << endl; 
+        return false; 
+    }
     
     check = X509_verify_cert(cert_verify_ctx);
-    if(!check) { cout << "Error: Server's certificate has been revoked" << endl; return false; }
+    if(!check) { 
+        cout << "Error: the server's certificate has been revoked" << endl; 
+        return false; 
+    }
     
     unsigned char *clear_buf;
     unsigned int clear_size = KEYSIZE + sizeof(unsigned int);
-    miaMalloc(clear_buf, clear_size); // [ TempkpubS || Nc ]
+    customMalloc(clear_buf, clear_size); // [ TempkpubS || Nc ]
     //copying elements into the buffer
     memcpy(clear_buf, tempPubk, KEYSIZE);
     memcpy(clear_buf + KEYSIZE, &Nc, sizeof(unsigned int));
     
-    write_file( (unsigned char *)("CLIENT_FILES/" + IDClient + "/tempPubk.pem").c_str(), tempPubk, strlen((char *)tempPubk) );
+    write_file((unsigned char *)("CLIENT_FILES/" + IDClient + "/tempPubk.pem").c_str(), tempPubk, strlen((char*)tempPubk));
     
     //Extract server public key from certificate
     const EVP_MD* md = EVP_sha256();
     EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
     int ret;
-    if(!md_ctx){ cerr << "Error: EVP_MD_CTX_new returned NULL\n"; return false; }
+    if(!md_ctx){ 
+        cerr << "Error: EVP_MD_CTX_new() returned NULL" << endl; 
+        return false; 
+    }
+
     // verify the plaintext:
     ret = EVP_VerifyInit(md_ctx, md);
-    if(ret == 0){ cerr << "Error: EVP_VerifyInit returned " << ret << "\n"; return false; }
+    if(ret == 0){ 
+        cerr << "Error: EVP_VerifyInit() returned " << ret << endl; 
+        return false; 
+    }
     ret = EVP_VerifyUpdate(md_ctx, clear_buf, clear_size);  
-    if(ret == 0){ cerr << "Error: EVP_VerifyUpdate returned " << ret << "\n"; return false; }
+    if(ret == 0){ 
+        cerr << "Error: EVP_VerifyUpdate() returned " << ret << endl; 
+        return false; 
+    }
     ret = EVP_VerifyFinal(md_ctx, signature, SHA256, X509_get_pubkey(serverCert));
-    if(ret == -1){  cerr << "Error: EVP_VerifyFinal returned " << ret << " (invalid signature?)\n"; return false; }
-    else if(ret == 0){ cerr << "Error: Invalid signature!\n"; exit(1); }
-    //write_file( (unsigned char *)("CLIENT_FILES/" + IDClient + "/certServer.pem").c_str(), certServer, cert_dim );
+    if(ret == -1){  
+        cerr << "Error: EVP_VerifyFinal() returned " << ret << " (invalid signature?)" << endl; 
+        return false; 
+    }else if(ret == 0){ 
+        cerr << "Error: invalid signature" << endl; 
+        exit(1); 
+    }
     
     destroy(clear_buf, clear_size);
     EVP_MD_CTX_free(md_ctx);
     X509_free(serverCert);
     X509_STORE_free(store);
     X509_STORE_CTX_free(cert_verify_ctx);
+
     return true;
 }
                            
 /*
-    FORMAT M3: [ Ns, iv, encryptedSessionKLen, Enc(K, TempKpubS), encryptedK, (Ns)signed_w_privkC ]
-    The buildM3() function builds the message M3:
-        -] loads the client's private key
-        -] signs the server's nonce called Ns
-        -] builds the message M3
-        -] return true if succeeds
-        -] return false otherwise
+    M3 FORMAT: [ Ns, iv, encryptedSessionKLen, Enc(K, TempKpubS), encryptedK, (Ns)signed_w_privkC ]
+    buildM3() builds M3:
+        -> loads the client's private key
+        -> signs the server's nonce called Ns
+        -> builds the message M3
+        -> returns true if succeeds
+        -> returns false otherwise
 */
-bool buildM3(unsigned char *M3, unsigned int Ns, unsigned char *encryptedSessionK, int encryptedSessionKLen, unsigned char *iv, unsigned int ivLen, unsigned char * encryptedK, int encryptedKLen, string IDClient)
-{
+bool buildM3(unsigned char *M3, unsigned int Ns, unsigned char *encryptedSessionK, int encryptedSessionKLen, unsigned char *iv, unsigned int ivLen, unsigned char * encryptedK, int encryptedKLen, string IDClient){
     //Signature of Ns
     FILE *clientPrivKeyFile = fopen( ("CLIENT_FILES/" + IDClient + "/privk_" + IDClient + ".pem").c_str(), "r");
-    if(!clientPrivKeyFile)
-    {
-        cerr << "Error: cannot open file client_privk.pem" << endl;
-        return false;
-    }
-    EVP_PKEY *clientPrivKey = PEM_read_PrivateKey(clientPrivKeyFile, NULL, NULL, NULL);
-    fclose(clientPrivKeyFile);
-    if(!clientPrivKey)
-    {
-        cerr << "Error: PEM_read_PrivateKey clientPrivKey returned NULL" << endl;
+    if(!clientPrivKeyFile){
+        cerr << "Error: cannot open file 'client_privk.pem'" << endl;
         return false;
     }
 
-    //      SIGNATURE of Ns
+    EVP_PKEY *clientPrivKey = PEM_read_PrivateKey(clientPrivKeyFile, NULL, NULL, NULL);
+    fclose(clientPrivKeyFile);
+    if(!clientPrivKey){
+        cerr << "Error: PEM_read_PrivateKey() returned NULL" << endl;
+        return false;
+    }
+
+    //SIGNATURE of Ns
     const EVP_MD *md = EVP_sha256();
     //creating the signature context
     EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-    if(!md_ctx)
-    {
-        cerr << "Error: EVP_MD_CTX_new returned NULL" << endl;
+    if(!md_ctx){
+        cerr << "Error: EVP_MD_CTX_new() returned NULL" << endl;
         EVP_PKEY_free(clientPrivKey);
         return false;
     }
+
     //allocate the buffer for signature
     unsigned char* signature_buffer;
-    if(!miaMalloc(signature_buffer, EVP_PKEY_size(clientPrivKey)))
-    {
+    if(!customMalloc(signature_buffer, EVP_PKEY_size(clientPrivKey))){
         EVP_PKEY_free(clientPrivKey);
         return false;
     }
+
     //allocating buffer to be signed
     unsigned char *buffer_to_sign;
-    if(!miaMalloc(buffer_to_sign, sizeof(Ns) + encryptedSessionKLen))
-    {   
+    if(!customMalloc(buffer_to_sign, sizeof(Ns) + encryptedSessionKLen)){   
         EVP_PKEY_free(clientPrivKey);
         return false;
     }
@@ -388,9 +442,21 @@ bool buildM3(unsigned char *M3, unsigned int Ns, unsigned char *encryptedSession
     memcpy(buffer_to_sign + sizeof(Ns), encryptedSessionK, encryptedSessionKLen);
     unsigned int signatureLen = SHA256;
     
-    if(!EVP_SignInit(md_ctx, md)){cerr << "Error: EVP_SignInit returned 0" << endl; EVP_PKEY_free(clientPrivKey); return false; }
-    if(!EVP_SignUpdate(md_ctx, buffer_to_sign, sizeof(Ns) + encryptedSessionKLen)){cerr << "Error: EVP_SignUpdate returned 0" << endl; EVP_PKEY_free(clientPrivKey); return false; }
-    if(!EVP_SignFinal(md_ctx, signature_buffer, &signatureLen, clientPrivKey)){cerr << "Error: EVP_SignFinal returned 0" << endl; EVP_PKEY_free(clientPrivKey); return false; }
+    if(!EVP_SignInit(md_ctx, md)){
+        cerr << "Error: EVP_SignInit() returned 0" << endl; 
+        EVP_PKEY_free(clientPrivKey); 
+        return false; 
+    }
+    if(!EVP_SignUpdate(md_ctx, buffer_to_sign, sizeof(Ns) + encryptedSessionKLen)){
+        cerr << "Error: EVP_SignUpdate() returned 0" << endl; 
+        EVP_PKEY_free(clientPrivKey); 
+        return false; 
+    }
+    if(!EVP_SignFinal(md_ctx, signature_buffer, &signatureLen, clientPrivKey)){
+        cerr << "Error: EVP_SignFinal() returned 0" << endl; 
+        EVP_PKEY_free(clientPrivKey); 
+        return false; 
+    }
          
     //deleting the digest and the private key from memory
     EVP_MD_CTX_free(md_ctx);
@@ -408,32 +474,32 @@ bool buildM3(unsigned char *M3, unsigned int Ns, unsigned char *encryptedSession
 
 /*
     check_counter() functions checks the alignment of two counters, counterC and counterS.
-    In addition, check the wraparound of client's counter.
+    In addition, it checks the wraparound of the client's counter.
 */
-bool check_counter(unsigned long counterS, unsigned long &counterC) 
-{
-    if(counterC == ULONG_MAX) 
-    {
-         cerr<<"Counter reached maximum value, the connection will be closed"<<endl;
+bool check_counter(unsigned long counterS, unsigned long &counterC) {
+    if(counterC == ULONG_MAX) {
+         cerr << "The counter reached maximum value, the connection will be closed" << endl;
          return false;
-    }
-    else if(counterC != counterS)
-    {
-        cerr<<"An attack has been detected, the connection will be closed"<<endl;
+    }else if(counterC != counterS){
+        cerr<<"An attack has been detected, the connection will be closed" << endl;
         return false;
     }
+
     counterC++;
+
     return true;
 }
 
 /*
     The checkACK() function verifies the ACK received by the server.
-    It's used to understand the server's responce.
+    It's used to understand the server's response.
 */
-int checkACK(int conn_socket, unsigned char *sessionKey, unsigned long &counterC, unsigned long *dimFile)
-{
+int checkACK(int conn_socket, unsigned char *sessionKey, unsigned long &counterC, unsigned long *dimFile){
     unsigned char ackMsg[DIMMAX] = {0};
-    if( recv(conn_socket, (void*)&ackMsg, DIMMAX, MSG_WAITALL) != DIMMAX ) { cerr<<"Error: recv checkACK"<<endl; return -1; }
+    if(recv(conn_socket, (void*)&ackMsg, DIMMAX, MSG_WAITALL) != DIMMAX) {
+        cerr << "Error during checkACK() execution" << endl; 
+        return -1; 
+    }
     
     unsigned long counterS;
     memcpy(&counterS, ackMsg, sizeof(counterS));
@@ -443,55 +509,61 @@ int checkACK(int conn_socket, unsigned char *sessionKey, unsigned long &counterC
     int ciphertextLen;
     memcpy(&ciphertextLen, ackMsg + sizeof(counterS), sizeof(ciphertextLen));
     unsigned char *ciphertext;
-    if(!miaMalloc(ciphertext, ciphertextLen))
+    if(!customMalloc(ciphertext, ciphertextLen))
         return -1;
     memcpy(ciphertext, ackMsg + sizeof(counterS) + sizeof(ciphertextLen), ciphertextLen);
     
     unsigned char *iv, *tag_buf, *plaintext;;
-    if(!miaMalloc(iv, DIMIV))
+    if(!customMalloc(iv, DIMIV))
         return -1;
-    if(!miaMalloc(tag_buf, DIMTAG))
+    if(!customMalloc(tag_buf, DIMTAG))
         return -1;
-    if(!miaMalloc(plaintext, DIMACK))
+    if(!customMalloc(plaintext, DIMACK))
         return -1;
     memset(plaintext, '\0', DIMACK);
     memcpy(iv, ackMsg + sizeof(counterS) + sizeof(ciphertextLen) + ciphertextLen, DIMIV);
     memcpy(tag_buf, ackMsg + sizeof(counterS) + sizeof(ciphertextLen) + ciphertextLen + DIMIV, DIMTAG);
     
     int plaintextLen = gcm_decrypt(ciphertext, ciphertextLen, (unsigned char *)&counterS, sizeof(counterS), tag_buf, sessionKey, iv, DIMIV, plaintext);
-    if( plaintextLen < 0) { cerr<<"Error while decrypting"<<endl; return -1; }
+    if(plaintextLen < 0) { 
+        cerr << "Error during decryption" << endl; 
+        return -1; 
+    }
      
     string ACK ((char *)plaintext);
     char *token = strtok((char *)plaintext, "-");
     
-    if (ACK.rfind("OK", 0) == 0) // if ACK starts with "OK" then ...
-    { 
-        if(dimFile != NULL) // if last parameter, that is dimFile, is != NULL ==> there is the size of downloading file in the ACK
-        {
-            if( (token = strtok(NULL, "-")) == NULL) { cout<<"Erorr receiving ACK from server"<<endl; return -1;}
+    if (ACK.rfind("OK", 0) == 0){ // if ACK starts with "OK" then ... 
+        if(dimFile != NULL){ // if last parameter, that is dimFile, is != NULL ==> there is the size of downloading file in the ACK
+            if((token = strtok(NULL, "-")) == NULL) { 
+                cout<<"Error during ACK reception from the server" << endl; 
+                return -1;
+            }
             *dimFile = atol(token);
         }
         //if dimFile == NULL, then it's only an "OK MESSAGE"
         return 1;
     }
     
-    if( (token = strtok(NULL, "-")) == NULL) { cout<<"Erorr receiving ACK from server"<<endl; return -1;}
+    if((token = strtok(NULL, "-")) == NULL) { 
+        cout<<"Erorr during ACK reception from the server" << endl; 
+        return -1;
+    }
     
     string msgFromServer(token);
-    cout << "Error message from Server: " << msgFromServer <<endl;
+    cout << "Error message from the server: " << msgFromServer << endl;
         
     return 0;
 }
 
 /*
-    The executeRename() function takes care to prepare the Rename-Request and sends it to server.
-    It returns:
-        -] 1 if the rename operation is confirmed by the server
-        -] 0 if there is a Tollerable-Error and the server can't execute the rename operation (ex. the file specifies by client doesn't exists or the new fileName is invalid)
-        -] -1 if there is an Non-tollerable error (ex. an recv error or malloc error)
+    executeRename() takes care to prepare the Rename-Request and sends it to server.
+    return values:
+        -> 1: the rename operation is confirmed by the server
+        -> 0: tolerable error and the server can't execute the rename operation (ex. the file specifies by client doesn't exists or the new fileName is invalid)
+        -> -1: non-tolerable error (ex. recv error or malloc error)
 */
-int executeRename(unsigned char *session_key, unsigned long &counterC, int conn_socket)
-{
+int executeRename(unsigned char *session_key, unsigned long &counterC, int conn_socket){
     string current_filename;
     string new_filename;
     int pt_len, ciphertextLen;
@@ -499,23 +571,35 @@ int executeRename(unsigned char *session_key, unsigned long &counterC, int conn_
 	unsigned char *ciphertext;
 	unsigned char *tag_buf;
 
-    cout << "Type the name of the file that has to be renamed: ";
+    cout << "Name of the file to be renamed: ";
     cin >> current_filename;            //canonicalization + sanification SERVER SIDE
-    if(!cin){ cerr << "Error Rename during input" << endl; return -1; }
-    if(current_filename == "") { cout << "Please, enter a filename: "; return 0; }
-    cout << "Type the new file name: ";
+    if(!cin){
+        cerr << "Error during input operation" << endl; 
+        return -1; 
+    }
+    if(current_filename == "") { 
+        cout << "Please enter a valid filename: "; 
+    return 0; 
+    }
+    cout << "New name: ";
     cin >> new_filename;                //canonicalization + sanification SERVER SIDE
-    if(!cin) { cerr << "Error Rename: during input" << endl; return -1; }
-    if(new_filename == "") { cout << "Please, enter a filename: "; return 0; }
+    if(!cin) { 
+        cerr << "Error during input operation" << endl; 
+        return -1; 
+    }
+    if(new_filename == "") { 
+        cout << "Please enter a valid filename: "; 
+        return 0; 
+    }
 
     string composed_command = "rename " + current_filename + " " + new_filename;
     pt_len = strlen(composed_command.c_str());
 
-    if(!miaMalloc(ciphertext, pt_len+ EVP_CIPHER_block_size(EVP_aes_128_gcm())))
+    if(!customMalloc(ciphertext, pt_len+ EVP_CIPHER_block_size(EVP_aes_128_gcm())))
         return -1; // = (unsigned char*)malloc(pt_len + 16);
-    if(!miaMalloc(tag_buf, DIMTAG))
+    if(!customMalloc(tag_buf, DIMTAG))
         return -1; //tag_buf = (unsigned char *)malloc(DIMTAG);
-    if(!allocateANDgenerateIV(iv, EVP_aes_128_gcm()))
+    if(!allocateAndGenerateIV(iv, EVP_aes_128_gcm()))
         return -1;
     ciphertextLen = gcm_encrypt((unsigned char*)composed_command.c_str(), pt_len, (unsigned char *)&counterC, sizeof(unsigned long), session_key, iv, DIMIV, ciphertext, tag_buf);
     if(ciphertextLen < 0)
@@ -530,13 +614,17 @@ int executeRename(unsigned char *session_key, unsigned long &counterC, int conn_
     memcpy(to_be_sent + sizeof(counterC) + sizeof(ciphertextLen) + ciphertextLen, iv, DIMIV);
     memcpy(to_be_sent + sizeof(counterC) + sizeof(ciphertextLen) + ciphertextLen + DIMIV, tag_buf, DIMTAG);
           
-    if( send(conn_socket, (void*)to_be_sent, DIMMAX, MSG_WAITALL) != DIMMAX) { cerr<<"Error send executeRename()"<<endl; return -1; };
+    if(send(conn_socket, (void*)to_be_sent, DIMMAX, MSG_WAITALL) != DIMMAX) { 
+        cerr << "Error during send() " << endl; 
+        return -1; 
+    }
     counterC++;
 
     int retCheckACK = checkACK(conn_socket, session_key, counterC, NULL);
     
     if(retCheckACK == 1)
-        cout<<"File renamed"<<endl;
+        cout << "Your file was successfully renamed" << endl;
+    
     return retCheckACK;
 }
 
@@ -553,11 +641,11 @@ int executeDelete(unsigned char *session_key, unsigned long &counterC, int conn_
     unsigned char *iv;
 	unsigned char *ciphertext;
 	unsigned char *tag_buf;
-    if(!miaMalloc(ciphertext, DIMMAX))
+    if(!customMalloc(ciphertext, DIMMAX))
         return -1;
-	if(!allocateANDgenerateIV(iv, EVP_aes_128_gcm()))
+	if(!allocateAndGenerateIV(iv, EVP_aes_128_gcm()))
 	    return -1;
-	if(!miaMalloc(tag_buf, DIMTAG))
+	if(!customMalloc(tag_buf, DIMTAG))
 	    return -1;
 
     string filename;
@@ -607,7 +695,7 @@ int executeList(unsigned char *session_key, unsigned long &counterC, int conn_so
     pt_len = strlen( command.c_str() );
     ciphertext = (unsigned char*)malloc(pt_len + EVP_CIPHER_block_size(EVP_aes_128_gcm()));
     tag_buf = (unsigned char *)malloc(DIMTAG);
-    if(!allocateANDgenerateIV(iv, EVP_aes_128_gcm()))
+    if(!allocateAndGenerateIV(iv, EVP_aes_128_gcm()))
         return -1;
     ciphertextLen = gcm_encrypt((unsigned char*)command.c_str(), pt_len, (unsigned char *)&counterC, sizeof(unsigned long), session_key, iv, DIMIV, ciphertext, tag_buf);
     if(ciphertextLen < 0)
@@ -633,16 +721,16 @@ int executeList(unsigned char *session_key, unsigned long &counterC, int conn_so
         return -1;
     
     memcpy(&ciphertextLen, listMsg + sizeof(counterS), sizeof(ciphertextLen));
-    if(!miaMalloc(ciphertext, ciphertextLen))
+    if(!customMalloc(ciphertext, ciphertextLen))
         return -1;
     memcpy(ciphertext, listMsg + sizeof(counterS) + sizeof(ciphertextLen), ciphertextLen);
     
     unsigned char* plaintext;
-    if(!miaMalloc(plaintext, DIMMAX))
+    if(!customMalloc(plaintext, DIMMAX))
         return -1;
-    if(!miaMalloc(iv, DIMIV))
+    if(!customMalloc(iv, DIMIV))
         return -1;
-    if(!miaMalloc(tag_buf, DIMTAG))
+    if(!customMalloc(tag_buf, DIMTAG))
         return -1;
     memset(plaintext, '\0', DIMMAX);
 
@@ -678,12 +766,12 @@ bool extractFromMsgTheClearChunk(unsigned char *downloadMsg, unsigned long &coun
         return false;
     
     unsigned char *iv, *tag_buf;
-    if(!miaMalloc(iv, DIMIV))
+    if(!customMalloc(iv, DIMIV))
         return false;
-    if(!miaMalloc(tag_buf, DIMTAG))
+    if(!customMalloc(tag_buf, DIMTAG))
         return false;
     memcpy(&encrypted_chunkLen, downloadMsg + sizeof(counterC), sizeof(encrypted_chunkLen));
-    if(!miaMalloc(encrypted_chunk, encrypted_chunkLen))
+    if(!customMalloc(encrypted_chunk, encrypted_chunkLen))
         return false;
     
     memcpy(encrypted_chunk, downloadMsg + sizeof(counterC) + sizeof(encrypted_chunkLen), encrypted_chunkLen);
@@ -701,11 +789,11 @@ int executeDownload(unsigned char *sessionKey, unsigned long &counterC, int conn
     unsigned char *iv;
 	unsigned char *ciphertext; //this is the encrypted command
 	unsigned char *tag_buf;
-	if(!miaMalloc(ciphertext, DIMMAX))
+	if(!customMalloc(ciphertext, DIMMAX))
 	    return -1;
-	if(!allocateANDgenerateIV(iv, EVP_aes_128_gcm()))
+	if(!allocateAndGenerateIV(iv, EVP_aes_128_gcm()))
 	    return -1;
-	if(!miaMalloc(tag_buf, DIMTAG))
+	if(!customMalloc(tag_buf, DIMTAG))
 	    return -1;
 	
     int pt_len, ciphertextLen;
@@ -823,11 +911,11 @@ int executeUpload(unsigned char *session_key, unsigned long &counterC, int conn_
     unsigned char *iv;
 	unsigned char *ciphertext;
 	unsigned char *tag_buf;
-	if(!miaMalloc(ciphertext, DIMMAX))
+	if(!customMalloc(ciphertext, DIMMAX))
 	    return -1;
-	if(!allocateANDgenerateIV(iv, EVP_aes_128_gcm()))
+	if(!allocateAndGenerateIV(iv, EVP_aes_128_gcm()))
 	    return -1;
-	if(!miaMalloc(tag_buf, DIMTAG))
+	if(!customMalloc(tag_buf, DIMTAG))
 	    return -1;
 	
     int pt_len, ciphertextLen;
@@ -887,7 +975,7 @@ int executeUpload(unsigned char *session_key, unsigned long &counterC, int conn_
     for(unsigned int i = 0; i < tot_chunks; i++)
     {
         free(iv); 
-        if(!allocateANDgenerateIV(iv, EVP_aes_128_gcm()))
+        if(!allocateAndGenerateIV(iv, EVP_aes_128_gcm()))
             return -1;
         
         fread(&chunk, 1, CHUNK_DIM, to_be_uploaded);  //lettura dei chunk di dimensione CHUNK_DIM   
@@ -906,7 +994,7 @@ int executeUpload(unsigned char *session_key, unsigned long &counterC, int conn_
     if(byteToRead != 0)
     {
         free(iv);
-        if(!allocateANDgenerateIV(iv, EVP_aes_128_gcm()))
+        if(!allocateAndGenerateIV(iv, EVP_aes_128_gcm()))
             return -1;
         
         fread(&chunk, 1, byteToRead, to_be_uploaded);
@@ -935,11 +1023,11 @@ int executeLogout(unsigned char *&session_key, unsigned long &counterC, int conn
 	int ciphertextLen;
 
     /* Sending msg to the server for disconnecting */
-	if(!miaMalloc(ciphertext, plaintextLen + EVP_CIPHER_block_size(EVP_aes_128_gcm())))
+	if(!customMalloc(ciphertext, plaintextLen + EVP_CIPHER_block_size(EVP_aes_128_gcm())))
 	    return -1;
-	if(!allocateANDgenerateIV(iv, EVP_aes_128_gcm()))
+	if(!allocateAndGenerateIV(iv, EVP_aes_128_gcm()))
 	    return -1;
-	if(!miaMalloc(tag_buf, DIMTAG))
+	if(!customMalloc(tag_buf, DIMTAG))
 	    return -1;
 	
 	ciphertextLen = gcm_encrypt((unsigned char*)plaintext.c_str(), plaintextLen, (unsigned char *)&counterC, sizeof(counterC), session_key, iv, DIMIV, ciphertext, tag_buf);
@@ -1035,7 +1123,7 @@ int main(int argc, char* argv[])
        
    //Writing server certificate on client side
    unsigned char * session_key;
-   if(!miaMalloc(session_key, SESSION_KEY_LENGTH))
+   if(!customMalloc(session_key, SESSION_KEY_LENGTH))
        exit(1);
    RAND_poll();
    
@@ -1060,7 +1148,7 @@ int main(int argc, char* argv[])
 
    // allocate buffers for encrypted key and IV:
    unsigned char* encrypted_key , *envelope_iv ;
-   if( (!miaMalloc(encrypted_key, encrypted_key_len)) || (!miaMalloc(envelope_iv, iv_len)) )
+   if( (!customMalloc(encrypted_key, encrypted_key_len)) || (!customMalloc(envelope_iv, iv_len)) )
    {
         cerr << "Error: malloc returned NULL (encrypted key too big?)"<<endl;
         EVP_PKEY_free(tempPubkey); 
@@ -1071,7 +1159,7 @@ int main(int argc, char* argv[])
    if(SESSION_KEY_LENGTH > INT_MAX - block_size) { cerr <<"Error: integer overflow (file too big?)\n"; EVP_PKEY_free(tempPubkey);  exit(1); }
    int enc_buffer_size = SESSION_KEY_LENGTH + block_size;
    unsigned char* ciphertext_envelope;
-   if(!miaMalloc(ciphertext_envelope, enc_buffer_size))
+   if(!customMalloc(ciphertext_envelope, enc_buffer_size))
    {
        EVP_PKEY_free(tempPubkey); 
        exit(1);
